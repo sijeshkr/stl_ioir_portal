@@ -1,5 +1,5 @@
 // DashboardLayout.tsx
-// Design: Dark Command Center — persistent left sidebar (240px), top header, content area
+// Design: Dark Command Center — persistent left sidebar (240px), grouped nav sections, top header
 // Colors: Near-black bg, cyan accent, amber warnings, slate panels
 
 import { useState } from "react";
@@ -15,31 +15,81 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Sun,
   Moon,
   Bell,
   LogOut,
   Activity,
+  Award,
+  GitBranch,
+  CalendarDays,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/training", label: "Training Center", icon: GraduationCap, badge: 3 },
-  { path: "/onboarding", label: "Onboarding", icon: UserCheck },
-  { path: "/access-control", label: "Access Control", icon: ShieldAlert, badge: 2 },
-  { path: "/incidents", label: "Incident Reports", icon: Activity },
-  { path: "/policy", label: "Policy Hub", icon: FileText },
-  { path: "/vendors", label: "Vendor Access", icon: Users },
-  { path: "/compliance", label: "Compliance", icon: BarChart3 },
+type NavItem = {
+  path: string;
+  label: string;
+  icon: React.ElementType;
+  badge?: number;
+};
+
+type NavSection = {
+  section: string;
+  icon: React.ElementType;
+  color: string;
+  items: NavItem[];
+};
+
+const navSections: NavSection[] = [
+  {
+    section: "IT & Compliance",
+    icon: Shield,
+    color: "text-cyan-400",
+    items: [
+      { path: "/", label: "Dashboard", icon: LayoutDashboard },
+      { path: "/training", label: "Training Center", icon: GraduationCap, badge: 3 },
+      { path: "/onboarding", label: "Onboarding", icon: UserCheck },
+      { path: "/access-control", label: "Access Control", icon: ShieldAlert, badge: 2 },
+      { path: "/incidents", label: "Incident Reports", icon: Activity },
+      { path: "/policy", label: "Policy Hub", icon: FileText },
+      { path: "/vendors", label: "Vendor Access", icon: Users },
+      { path: "/compliance", label: "Compliance", icon: BarChart3 },
+    ],
+  },
+  {
+    section: "HR & People",
+    icon: Users,
+    color: "text-emerald-400",
+    items: [
+      { path: "/hr/people", label: "Staff Directory", icon: Users },
+      { path: "/hr/credentialing", label: "Credentialing", icon: Award },
+      { path: "/hr/org-chart", label: "Org Chart", icon: GitBranch },
+      { path: "/hr/time-off", label: "Time Off", icon: CalendarDays },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    "IT & Compliance": true,
+    "HR & People": true,
+  });
   const [location] = useLocation();
   const { theme, toggleTheme } = useTheme();
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Find current page label across all sections
+  const currentLabel = navSections
+    .flatMap((s) => s.items)
+    .find((n) => n.path === location)?.label ?? "Portal";
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -54,7 +104,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className={cn("flex items-center gap-3 px-4 py-5 border-b border-border", collapsed && "justify-center px-0")}>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-700 text-primary leading-tight tracking-wide">STL IO|IR</span>
+              <span className="text-sm font-bold text-primary leading-tight tracking-wide">STL IO|IR</span>
               <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Staff Portal</span>
             </div>
           )}
@@ -65,41 +115,67 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
         </div>
 
-        {/* Nav Items */}
-        <nav className="flex-1 py-4 overflow-y-auto">
-          {navItems.map(({ path, label, icon: Icon, badge }) => {
-            const isActive = location === path;
+        {/* Nav Sections */}
+        <nav className="flex-1 py-3 overflow-y-auto">
+          {navSections.map(({ section, icon: SectionIcon, color, items }) => {
+            const isExpanded = expandedSections[section] ?? true;
             return (
-              <Link key={path} href={path}>
-                <div
-                  className={cn(
-                    "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-md cursor-pointer transition-all duration-150 group relative",
-                    isActive
-                      ? "bg-primary/15 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    collapsed && "justify-center px-0 mx-1"
-                  )}
-                >
-                  {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
-                  )}
-                  <Icon size={16} className={cn("flex-shrink-0", isActive && "text-primary")} />
-                  {!collapsed && (
-                    <span className="text-sm font-medium flex-1">{label}</span>
-                  )}
-                  {!collapsed && badge && (
-                    <Badge className="bg-primary/20 text-primary border-0 text-[10px] h-4 px-1.5 font-mono">
-                      {badge}
-                    </Badge>
-                  )}
-                </div>
-              </Link>
+              <div key={section} className="mb-1">
+                {/* Section header */}
+                {!collapsed && (
+                  <button
+                    onClick={() => toggleSection(section)}
+                    className="w-full flex items-center gap-2 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <SectionIcon size={10} className={color} />
+                    <span className="flex-1 text-left">{section}</span>
+                    <ChevronDown
+                      size={10}
+                      className={cn("transition-transform duration-200", isExpanded ? "rotate-0" : "-rotate-90")}
+                    />
+                  </button>
+                )}
+                {collapsed && (
+                  <div className="mx-2 my-1 h-px bg-border" />
+                )}
+
+                {/* Nav items */}
+                {(isExpanded || collapsed) && items.map(({ path, label, icon: Icon, badge }) => {
+                  const isActive = location === path;
+                  return (
+                    <Link key={path} href={path}>
+                      <div
+                        className={cn(
+                          "flex items-center gap-3 mx-2 px-3 py-2 rounded-md cursor-pointer transition-all duration-150 group relative",
+                          isActive
+                            ? "bg-primary/15 text-primary"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                          collapsed && "justify-center px-0 mx-1"
+                        )}
+                      >
+                        {isActive && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
+                        )}
+                        <Icon size={15} className={cn("flex-shrink-0", isActive && "text-primary")} />
+                        {!collapsed && (
+                          <span className="text-xs font-medium flex-1">{label}</span>
+                        )}
+                        {!collapsed && badge && (
+                          <Badge className="bg-primary/20 text-primary border-0 text-[10px] h-4 px-1.5 font-mono">
+                            {badge}
+                          </Badge>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
 
         {/* Bottom controls */}
-        <div className={cn("border-t border-border p-3 flex flex-col gap-2", collapsed && "items-center")}>
+        <div className={cn("border-t border-border p-3 flex flex-col gap-1.5", collapsed && "items-center")}>
           <button
             onClick={toggleTheme}
             className={cn(
@@ -108,7 +184,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
           >
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-            {!collapsed && <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
+            {!collapsed && <span className="text-xs">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
           </button>
           <button
             className={cn(
@@ -117,7 +193,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
           >
             <LogOut size={15} />
-            {!collapsed && <span>Sign Out</span>}
+            {!collapsed && <span className="text-xs">Sign Out</span>}
           </button>
         </div>
       </aside>
@@ -137,13 +213,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <header className="flex items-center justify-between px-6 py-3 border-b border-border bg-card/50 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground font-mono uppercase tracking-widest">
-              {navItems.find((n) => n.path === location)?.label ?? "Portal"}
+              {currentLabel}
             </span>
           </div>
           <div className="flex items-center gap-3">
             {/* Live status */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="status-dot online" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="font-mono">Systems Nominal</span>
             </div>
             {/* Notifications */}
