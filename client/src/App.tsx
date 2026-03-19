@@ -17,6 +17,7 @@ import HRPeople from "./pages/HRPeople";
 import HRCredentialing from "./pages/HRCredentialing";
 import HROrgChart from "./pages/HROrgChart";
 import HRTimeOff from "./pages/HRTimeOff";
+import ReferralInbox from "./pages/ReferralInbox";
 
 function Router() {
   return (
@@ -37,6 +38,8 @@ function Router() {
         <Route path="/hr/credentialing" component={HRCredentialing} />
         <Route path="/hr/org-chart" component={HROrgChart} />
         <Route path="/hr/time-off" component={HRTimeOff} />
+        {/* Communications */}
+        <Route path="/comms/referrals" component={ReferralInbox} />
         {/* Fallback */}
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

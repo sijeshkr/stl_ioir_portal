@@ -25,6 +25,8 @@ import {
   GitBranch,
   CalendarDays,
   Shield,
+  MessageSquare,
+  Inbox,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +73,14 @@ const navSections: NavSection[] = [
       { path: "/hr/time-off", label: "Time Off", icon: CalendarDays },
     ],
   },
+  {
+    section: "Communications",
+    icon: MessageSquare,
+    color: "text-purple-400",
+    items: [
+      { path: "/comms/referrals", label: "Referral Inbox", icon: Inbox, badge: 2 },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -78,6 +88,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     "IT & Compliance": true,
     "HR & People": true,
+    "Communications": true,
   });
   const [location] = useLocation();
   const { theme, toggleTheme } = useTheme();
