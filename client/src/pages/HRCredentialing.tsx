@@ -1,109 +1,190 @@
 // HRCredentialing.tsx — STL IO|IR Portal
-// Design: Dark Command Center — license expiry tracker, renewal alerts, compliance matrix
+// Design: Dark Command Center — real staff credentialing tracker with client's exact fields
+// Fields: Birthday, MD (MO) exp, RN exp, CCRN Cert, ARRT exp, BLS Exp, ACLS Exp, PALS Exp, HIPAA Exp, BB Path Exp
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import {
-  AlertTriangle, CheckCircle2, Clock, Award,
-  Plus, Download, RefreshCw, XCircle
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Search, AlertTriangle, CheckCircle2, Clock, Download,
+  RefreshCw, Award, ChevronRight, Bell,
 } from "lucide-react";
 import { toast } from "sonner";
-import { staffData } from "./HRPeople";
+import {
+  STAFF, displayName, expiryStatus, EXPIRY_STYLE, type StaffMember, type ExpiryStatus,
+} from "@/lib/staffData";
 
-// Flatten all licenses and certifications across staff
-const allCredentials = staffData.flatMap((s) => [
-  ...s.licenses.map((l) => ({ label: l.type, number: l.number, expiry: l.expiry, status: l.status, staffName: s.name, staffInitials: s.initials, staffColor: s.color, credType: "License" as const })),
-  ...s.certifications.map((c) => ({ label: c.name, number: "—", expiry: c.expiry, status: c.status, staffName: s.name, staffInitials: s.initials, staffColor: s.color, credType: "Certification" as const })),
-]);
+// ─── Cert column definitions (matching client's spreadsheet exactly) ──────────
+type CertKey = keyof StaffMember["certs"];
 
-const expiring = allCredentials.filter((c) => c.status === "expiring");
-const expired = allCredentials.filter((c) => c.status === "expired");
-const current = allCredentials.filter((c) => c.status === "current");
-
-const statusIcon = (s: string) => {
-  if (s === "current") return <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />;
-  if (s === "expiring") return <AlertTriangle size={13} className="text-amber-400 flex-shrink-0" />;
-  return <XCircle size={13} className="text-red-400 flex-shrink-0" />;
-};
-
-const statusBadge = (s: string) => {
-  if (s === "current") return <Badge className="bg-emerald-500/15 text-emerald-400 border-0 text-[10px]">Current</Badge>;
-  if (s === "expiring") return <Badge className="bg-amber-500/15 text-amber-400 border-0 text-[10px]">Expiring Soon</Badge>;
-  return <Badge className="bg-red-500/15 text-red-400 border-0 text-[10px]">Expired</Badge>;
-};
-
-// Credentialing compliance per clinical staff
-const clinicalStaff = staffData.filter((s) => s.department === "Clinical" && s.licenses.length > 0);
-
-const renewalTimeline = [
-  { month: "Mar 2026", items: ["Dr. Vaheesan — Fluoroscopy Permit"] },
-  { month: "Jun 2026", items: ["Sarah Mitchell — NP License (MO)", "Sarah Mitchell — RN License (MO)"] },
-  { month: "Dec 2026", items: ["Dr. Vaheesan — MD License (MO)", "Priya Kapoor — CPC Certification"] },
-  { month: "Aug 2026", items: ["Dr. Vaheesan — ACLS"] },
-  { month: "Nov 2026", items: ["Sarah Mitchell — ACLS", "Sarah Mitchell — BLS"] },
+const CERT_COLUMNS: { key: CertKey; label: string; shortLabel: string }[] = [
+  { key: "mdMoExp",   label: "MD (MO) License Exp",  shortLabel: "MD (MO)" },
+  { key: "rnExp",     label: "RN License Exp",        shortLabel: "RN Exp" },
+  { key: "ccrnCert",  label: "CCRN Cert",             shortLabel: "CCRN" },
+  { key: "arrtExp",   label: "ARRT Exp",              shortLabel: "ARRT" },
+  { key: "blsExp",    label: "BLS Exp",               shortLabel: "BLS" },
+  { key: "aclsExp",   label: "ACLS Exp",              shortLabel: "ACLS" },
+  { key: "palsExp",   label: "PALS Exp",              shortLabel: "PALS" },
+  { key: "hipaaExp",  label: "HIPAA Training Exp",    shortLabel: "HIPAA" },
+  { key: "bbPathExp", label: "BB Path Exp",           shortLabel: "BB Path" },
 ];
 
+// ─── Cert Cell ────────────────────────────────────────────────────────────────
+function CertCell({ value }: { value?: string }) {
+  const status: ExpiryStatus = expiryStatus(value);
+  const style = EXPIRY_STYLE[status];
+
+  if (!value) {
+    return <span className="text-muted-foreground text-[11px]">—</span>;
+  }
+
+  const isNote = value.toLowerCase().includes("enrolled") ||
+    value.toLowerCase().includes("approved") ||
+    value.toLowerCase().includes("for ") ||
+    value === "req";
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${style.dot}`} />
+        <span className={`text-[11px] font-mono ${
+          status === "expired" ? "text-red-400" :
+          status === "expiring_soon" ? "text-amber-400" :
+          status === "valid" ? "text-emerald-400" :
+          status === "na" ? "text-slate-500" :
+          "text-blue-400"
+        }`}>
+          {value === "n/a" ? "N/A" : value}
+        </span>
+      </div>
+      {isNote && (
+        <span className="text-[9px] text-muted-foreground leading-tight pl-2.5 max-w-[100px]">{value}</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Staff Detail Modal ───────────────────────────────────────────────────────
+function StaffCertModal({ staff, onClose }: { staff: StaffMember; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg bg-card border-border">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl ${staff.avatarColor} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+              {staff.initials}
+            </div>
+            <div>
+              <DialogTitle className="text-base">{displayName(staff)}</DialogTitle>
+              <p className="text-xs text-muted-foreground">{staff.jobTitle} · {staff.department}</p>
+            </div>
+          </div>
+        </DialogHeader>
+        <div className="space-y-1 mt-2">
+          <div className="flex items-center justify-between py-2 border-b border-border">
+            <span className="text-xs text-muted-foreground">Birthday</span>
+            <span className="text-xs font-mono">{staff.birthday}</span>
+          </div>
+          {CERT_COLUMNS.map(col => {
+            const val = staff.certs[col.key];
+            const status = expiryStatus(val);
+            const style = EXPIRY_STYLE[status];
+            return (
+              <div key={col.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                <span className="text-xs text-muted-foreground">{col.label}</span>
+                <div className="flex items-center gap-2">
+                  {val ? (
+                    <>
+                      <Badge className={`text-[10px] ${style.className}`}>{style.label}</Badge>
+                      <span className="text-xs font-mono">{val === "n/a" ? "N/A" : val}</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not on file</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-2 mt-2 pt-3 border-t border-border">
+          <Button size="sm" variant="outline" className="flex-1 text-xs gap-1" onClick={() => toast.info("Send renewal reminder — coming soon.")}>
+            <Bell size={12} /> Send Reminder
+          </Button>
+          <Button size="sm" variant="outline" className="flex-1 text-xs gap-1" onClick={() => toast.info("Upload credential — coming soon.")}>
+            <Download size={12} /> Upload Credential
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function HRCredentialing() {
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<StaffMember | null>(null);
+
+  const filtered = STAFF.filter(s =>
+    displayName(s).toLowerCase().includes(search.toLowerCase()) ||
+    s.jobTitle.toLowerCase().includes(search.toLowerCase()) ||
+    s.department.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Compute alert counts across all cert fields
+  const allCertValues = STAFF.flatMap(s => CERT_COLUMNS.map(c => s.certs[c.key]));
+  const expiredCount = allCertValues.filter(v => expiryStatus(v) === "expired").length;
+  const expiringSoonCount = allCertValues.filter(v => expiryStatus(v) === "expiring_soon").length;
+  const pendingCount = allCertValues.filter(v => expiryStatus(v) === "pending").length;
+  const naCount = allCertValues.filter(v => expiryStatus(v) === "na").length;
+
+  // Staff with at least one expired or expiring cert
+  const staffWithIssues = STAFF.filter(s =>
+    CERT_COLUMNS.some(c => {
+      const st = expiryStatus(s.certs[c.key]);
+      return st === "expired" || st === "expiring_soon";
+    })
+  );
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Credentialing & Licensing</h1>
-          <p className="text-sm text-muted-foreground mt-1">Track clinical licenses, certifications, and renewal deadlines across all staff.</p>
+          <h1 className="text-xl font-bold">Credentialing</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            License and certification tracker for all STL IO|IR staff.
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => toast.success("Credentialing report exported.")}>
-            <Download size={13} /> Export Report
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => toast.info("Export to CSV — coming soon.")}>
+            <Download size={13} /> Export
           </Button>
-          <Button size="sm" className="gap-1.5 text-xs" onClick={() => toast.info("Add credential — coming soon.")}>
-            <Plus size={13} /> Add Credential
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => toast.info("Send all renewal reminders — coming soon.")}>
+            <Bell size={13} /> Send Reminders
           </Button>
         </div>
       </div>
 
-      {/* Alert banner for expiring */}
-      {(expiring.length > 0 || expired.length > 0) && (
-        <Card className="bg-amber-500/5 border-amber-400/20">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-amber-400">
-                  {expiring.length} credential{expiring.length !== 1 ? "s" : ""} expiring soon
-                  {expired.length > 0 && ` · ${expired.length} expired`}
-                </p>
-                <div className="mt-2 space-y-1">
-                  {expiring.map((c, i) => (
-                    <p key={i} className="text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">{c.staffName}</span> — {c.label} expires {c.expiry}
-                    </p>
-                  ))}
-                </div>
-              </div>
-              <Button size="sm" variant="outline" className="text-xs gap-1 flex-shrink-0" onClick={() => toast.info("Renewal reminders sent.")}>
-                <RefreshCw size={11} /> Send Reminders
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Status summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Current", count: current.length, color: "text-emerald-400", bg: "bg-emerald-400/10", icon: CheckCircle2 },
-          { label: "Expiring Soon", count: expiring.length, color: "text-amber-400", bg: "bg-amber-400/10", icon: AlertTriangle },
-          { label: "Expired", count: expired.length, color: "text-red-400", bg: "bg-red-400/10", icon: XCircle },
-        ].map((s) => (
+          { label: "Expired",       value: expiredCount,      icon: AlertTriangle, color: "text-red-400",     bg: "bg-red-400/10" },
+          { label: "Expiring Soon", value: expiringSoonCount, icon: Clock,         color: "text-amber-400",   bg: "bg-amber-400/10" },
+          { label: "Pending / Req", value: pendingCount,      icon: RefreshCw,     color: "text-blue-400",    bg: "bg-blue-400/10" },
+          { label: "N/A Fields",    value: naCount,           icon: CheckCircle2,  color: "text-slate-400",   bg: "bg-slate-400/10" },
+        ].map(s => (
           <Card key={s.label} className="bg-card border-border">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center`}>
+              <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center flex-shrink-0`}>
                 <s.icon size={16} className={s.color} />
               </div>
               <div>
-                <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
+                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-[11px] text-muted-foreground">{s.label}</p>
               </div>
             </CardContent>
@@ -111,135 +192,144 @@ export default function HRCredentialing() {
         ))}
       </div>
 
-      <Tabs defaultValue="all">
-        <TabsList className="bg-card border border-border">
-          <TabsTrigger value="all">All Credentials</TabsTrigger>
-          <TabsTrigger value="matrix">Compliance Matrix</TabsTrigger>
-          <TabsTrigger value="timeline">Renewal Timeline</TabsTrigger>
-        </TabsList>
-
-        {/* All Credentials */}
-        <TabsContent value="all" className="mt-4">
-          <Card className="bg-card border-border">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left px-4 py-3 text-muted-foreground font-medium">Staff Member</th>
-                      <th className="text-left px-4 py-3 text-muted-foreground font-medium">Credential</th>
-                      <th className="text-left px-4 py-3 text-muted-foreground font-medium">Type</th>
-                      <th className="text-left px-4 py-3 text-muted-foreground font-medium">Number / ID</th>
-                      <th className="text-left px-4 py-3 text-muted-foreground font-medium">Expiry</th>
-                      <th className="text-center px-4 py-3 text-muted-foreground font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allCredentials.map((c, i) => (
-                      <tr key={i} className="border-b border-border last:border-0 hover:bg-accent/30 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold ${c.staffColor}`}>
-                              {c.staffInitials}
-                            </div>
-                            <span className="font-medium">{c.staffName}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-medium">{c.label}</td>
-                        <td className="px-4 py-3">
-                          <Badge className={`text-[10px] border-0 ${c.credType === "License" ? "bg-cyan-500/15 text-cyan-400" : "bg-amber-500/15 text-amber-400"}`}>
-                            {c.credType}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-muted-foreground">{c.number}</td>
-                        <td className="px-4 py-3 font-mono">{c.expiry}</td>
-                        <td className="px-4 py-3 text-center">{statusBadge(c.status)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Compliance Matrix */}
-        <TabsContent value="matrix" className="mt-4">
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Clinical Staff Credentialing Compliance</CardTitle>
-              <p className="text-xs text-muted-foreground">Required credentials per role — current status</p>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-5">
-                {clinicalStaff.map((staff) => {
-                  const allCreds = [...staff.licenses, ...staff.certifications];
-                  const issues = allCreds.filter(c => c.status !== "current").length;
-                  return (
-                    <div key={staff.id} className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${staff.color}`}>
-                          {staff.initials}
-                        </div>
-                        <span className="text-sm font-semibold">{staff.name}</span>
-                        <span className="text-xs text-muted-foreground">{staff.role}</span>
-                        {issues > 0 ? (
-                          <Badge className="bg-amber-500/15 text-amber-400 border-0 text-[10px] ml-auto">{issues} issue{issues > 1 ? "s" : ""}</Badge>
-                        ) : (
-                          <Badge className="bg-emerald-500/15 text-emerald-400 border-0 text-[10px] ml-auto">Fully Compliant</Badge>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pl-9">
-                        {allCreds.map((c, ci) => (
-                          <div key={ci} className={`flex items-center gap-2 p-2 rounded-lg border ${c.status === "current" ? "border-emerald-400/20 bg-emerald-400/5" : c.status === "expiring" ? "border-amber-400/20 bg-amber-400/5" : "border-red-400/20 bg-red-400/5"}`}>
-                            {statusIcon(c.status)}
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-medium truncate">{'type' in c ? (c as any).type : (c as any).name}</p>
-                              <p className="text-[9px] text-muted-foreground font-mono">{c.expiry === "N/A" ? "No Expiry" : c.expiry}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+      {/* Alerts panel */}
+      {staffWithIssues.length > 0 && (
+        <Card className="bg-card border-amber-500/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-400">
+              <AlertTriangle size={14} /> Action Required — Expired or Expiring Credentials
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {staffWithIssues.map(s => {
+              const issues = CERT_COLUMNS.filter(c => {
+                const st = expiryStatus(s.certs[c.key]);
+                return st === "expired" || st === "expiring_soon";
+              });
+              return (
+                <div key={s.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0`}>
+                      {s.initials}
                     </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Renewal Timeline */}
-        <TabsContent value="timeline" className="mt-4">
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Upcoming Renewal Calendar</CardTitle>
-              <p className="text-xs text-muted-foreground">Next 18 months — sorted by urgency</p>
-            </CardHeader>
-            <CardContent>
-              <div className="relative pl-6 space-y-6">
-                <div className="absolute left-2 top-0 bottom-0 w-px bg-border" />
-                {renewalTimeline.map((month) => (
-                  <div key={month.month} className="relative">
-                    <div className="absolute -left-4 top-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" />
-                    <p className="text-xs font-bold text-primary mb-2">{month.month}</p>
-                    <div className="space-y-1.5">
-                      {month.items.map((item) => (
-                        <div key={item} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border border-border">
-                          <Award size={12} className="text-amber-400 flex-shrink-0" />
-                          <span className="text-xs">{item}</span>
-                          <Button size="sm" variant="outline" className="ml-auto h-5 text-[9px] px-2 py-0" onClick={() => toast.info("Renewal workflow — coming soon.")}>
-                            Renew
-                          </Button>
-                        </div>
-                      ))}
+                    <div>
+                      <p className="text-xs font-semibold">{displayName(s)}</p>
+                      <p className="text-[10px] text-muted-foreground">{s.jobTitle}</p>
                     </div>
                   </div>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {issues.map(c => {
+                      const st = expiryStatus(s.certs[c.key]);
+                      return (
+                        <Badge key={c.key} className={`text-[9px] ${EXPIRY_STYLE[st].className}`}>
+                          {c.shortLabel}: {st === "expired" ? "Expired" : "Expiring Soon"}
+                        </Badge>
+                      );
+                    })}
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setSelected(s)}>
+                      <ChevronRight size={12} />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search + Legend */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search staff…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-8 h-8 text-xs bg-card border-border"
+          />
+        </div>
+        <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
+          {Object.entries(EXPIRY_STYLE).map(([key, val]) => (
+            <div key={key} className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${val.dot}`} />
+              <span>{val.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Main credentialing grid */}
+      <Card className="bg-card border-border">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ minWidth: "1200px" }}>
+              <thead>
+                <tr className="border-b border-border bg-background/50">
+                  <th className="text-left px-4 py-3 text-muted-foreground font-medium sticky left-0 bg-background/95 z-10" style={{ minWidth: "200px" }}>
+                    Staff Member
+                  </th>
+                  <th className="text-left px-3 py-3 text-muted-foreground font-medium" style={{ minWidth: "70px" }}>
+                    Birthday
+                  </th>
+                  {CERT_COLUMNS.map(col => (
+                    <th key={col.key} className="text-left px-3 py-3 text-muted-foreground font-medium" style={{ minWidth: "115px" }}>
+                      {col.shortLabel}
+                    </th>
+                  ))}
+                  <th className="text-center px-3 py-3 text-muted-foreground font-medium" style={{ minWidth: "60px" }}>
+                    Detail
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(s => (
+                  <tr
+                    key={s.id}
+                    className="border-b border-border last:border-0 hover:bg-accent/20 transition-colors group"
+                  >
+                    {/* Name */}
+                    <td className="px-4 py-3 sticky left-0 bg-card group-hover:bg-accent/20 transition-colors z-10">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-lg ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0`}>
+                          {s.initials}
+                        </div>
+                        <div>
+                          <p className="font-semibold leading-tight">{displayName(s)}</p>
+                          <p className="text-[10px] text-muted-foreground">{s.designation || s.jobTitle}</p>
+                        </div>
+                      </div>
+                    </td>
+                    {/* Birthday */}
+                    <td className="px-3 py-3 font-mono text-muted-foreground">{s.birthday}</td>
+                    {/* Cert columns */}
+                    {CERT_COLUMNS.map(col => (
+                      <td key={col.key} className="px-3 py-3">
+                        <CertCell value={s.certs[col.key]} />
+                      </td>
+                    ))}
+                    {/* Detail */}
+                    <td className="px-3 py-3 text-center">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => setSelected(s)}
+                      >
+                        <ChevronRight size={13} />
+                      </Button>
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Staff cert detail modal */}
+      {selected && (
+        <StaffCertModal staff={selected} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }
