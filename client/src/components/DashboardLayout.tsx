@@ -27,6 +27,14 @@ import {
   Shield,
   MessageSquare,
   Inbox,
+  TrendingUp,
+  Zap,
+  Brain,
+  Layers,
+  Globe,
+  PlayCircle,
+  RefreshCw,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,6 +89,21 @@ const navSections: NavSection[] = [
       { path: "/comms/referrals", label: "Referral Inbox", icon: Inbox, badge: 2 },
     ],
   },
+  {
+    section: "Paid Ads",
+    icon: TrendingUp,
+    color: "text-amber-400",
+    items: [
+      { path: "/ads/campaign-planner", label: "Campaign Planner", icon: Layers },
+      { path: "/ads/intelligence-hub", label: "Intelligence Hub", icon: Zap, badge: 3 },
+      { path: "/ads/strategy-workspace", label: "Strategy Workspace", icon: Brain },
+      { path: "/ads/asset-studio", label: "Ad Asset Studio", icon: TrendingUp },
+      { path: "/ads/landing-pages", label: "Landing Pages", icon: Globe },
+      { path: "/ads/execution-center", label: "Execution Center", icon: PlayCircle },
+      { path: "/ads/offline-conversion", label: "Offline Conversion", icon: RefreshCw },
+      { path: "/ads/knowledge-room", label: "Knowledge Room", icon: BookOpen },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -89,6 +112,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     "IT & Compliance": true,
     "HR & People": true,
     "Communications": true,
+    "Paid Ads": true,
   });
   const [location] = useLocation();
   const { theme, toggleTheme } = useTheme();
